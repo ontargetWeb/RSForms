@@ -1,37 +1,33 @@
 //Script called after form has been processed eg ecwexford.ie
 <?php
-use Joomla\CMS\Factory;
-use Joomla\CMS\Helper\ModuleHelper;
-
-// Check if the form data indicates 'no' for previous registration and unset the first mapping if true
-if (Factory::getApplication()->input->get('form', '', 'array')['prevreg'] == 'no') {
-    unset($mappings[0]);
+if($_POST['form']['prevreg'] == 'no')
+{
+unset($mappings[0]);
 }
+// Load the AcyMailing library
+$postData = $_REQUEST['form'];
+$ds = DIRECTORY_SEPARATOR;
+include_once rtrim(JPATH_ADMINISTRATOR, $ds).$ds.'components'.$ds.'com_acym'.$ds.'helpers'.$ds.'helper.php';
+$userClass = new AcyMailing\Classes\UserClass();
 
-// Acymailing Subscription to Substitution list
-$postData = Factory::getApplication()->input->get('form', '', 'array');
+// Build the user based on your form's fields
+$myUser = new stdClass(); 
+$myUser->email = strip_tags($postData['Email']);
+$myUser->name = strip_tags($_POST['form']['firstname'].' '.$_POST['form']['lastname']);
 
-include_once rtrim(JPATH_ADMINISTRATOR, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'components' . DIRECTORY_SEPARATOR . 'com_acymailing' . DIRECTORY_SEPARATOR . 'helpers' . DIRECTORY_SEPARATOR . 'helper.php';
+// If the user already exists update it
+$existingUser = $userClass->getOneByEmail($postData['Email']);
+if (!empty($existingUser)) $myUser->id = $existingUser->id;
 
-$myUser = new stdClass();
-$myUser->email = strip_tags($postData['Email']); // Replace 'Email' with your own field name
-$myUser->name = strip_tags($postData['firstname'] . ' ' . $postData['lastname']); // Replace 'firstname' and 'lastname' with your own field names
+// You can add as many extra fields as you want if you already created them in AcyMailing
+//$customFields = [];
+//$customFields[CUSTOM_FIELD_ID] = $postData['MY_FIELD']; // the custom field id can be found in the Custom fields list of the AcyMailing admin page
 
-$subscriberClass = acymailing_get('class.subscriber');
 
-$subscribe = array(10); // Specify here the ID of your lists separated by a comma
-Factory::getApplication()->input->set('subscription', $subscribe); // Only useful when using a subscription condition in the "Create Joomla user" plugin
+$userClass->sendConf = true; // Or false if you don't want a confirmation email to be sent
+//$userId = $userClass->save($myUser, $customFields);
+$userId = $userClass->save($myUser);
 
-$subid = $subscriberClass->save($myUser);
-
-$subscriberClass->sendConf($subid); // Send the confirmation email if needed based on the current user status and the options from the Acy configuration page
-
-$newSubscription = array();
-if (!empty($subscribe)) {
-    foreach ($subscribe as $listId) {
-        $newList = array();
-        $newList['status'] = 1;
-        $newSubscription[$listId] = $newList;
-    }
-}
-$subscriberClass->saveSubscription($subid, $newSubscription);
+// The user now exists in AcyMailing, let's add some list subscriptions
+$subscribe = [10]; // Ids of the lists you want the user to be subscribed to need to be added in this array
+$userClass->subscribe($userId, $subscribe);
